@@ -3,9 +3,6 @@
 #include <poll.h>
 #include "IOWatch.h"
 #include "LinkedList.h"
-#include "CLogger.h"
-
-#define LOG_TAG "IOWatch"
 
 /*****************************************/
 /** Interface Definition                **/
@@ -137,14 +134,9 @@ static int iowatch_dispatch(MyIOWatch * this, int timeout)
 
 	iowatch_update_fds(this);
 
-	LOG_V(LOG_TAG, "Start Watch - max_nfds[%d], cur_nfds[%d], timeout[%d]", 
-			this->poll_max_nfds, this->poll_cur_nfds, timeout);
-
 	if ((count = poll(this->poll_fds, this->poll_cur_nfds, timeout)) < 0)
 		return -3;
 	
-	LOG_V(LOG_TAG, "Result Watch - count[%d]", count); 
-
 	if (count == 0)
 		return 0;
 

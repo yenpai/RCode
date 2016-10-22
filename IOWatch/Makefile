@@ -18,8 +18,7 @@ GEN_LIBS = libIOWatch.a
 
 #DEFINES := 
 INCLUDES := \
-	-I$(TDIR)/Container \
-	-I$(TDIR)/CLogger 
+	-I$(TDIR)/Container
 
 #############################################################
 # Recursion Magic

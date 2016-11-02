@@ -46,7 +46,7 @@ struct MyEDLoop {
 #define SET_NEEDSTOP(this, val) SET_STATUS(this, STATUS_NEEDSTOP_BIT, val)
 
 /**************************************************************/
-/****                EDLOOP                               *****/
+/****                EDLOOP Private Method                *****/
 /**************************************************************/
 
 static int edloop_expand_fds(MyEDLoop * this, nfds_t nfds)
@@ -212,7 +212,8 @@ static void syssig_destroy(MyEDLoop * this)
 #endif
 
 /**************************************************************/
-
+/****                EDLOOP Public Method                 *****/
+/**************************************************************/
 #ifdef EDLOOP_SUPPORT_SYSSIG
 static int M_RegSysSignal(EDLoop * self, int sig, EDLoopSignalCB cb)
 {

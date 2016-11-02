@@ -78,7 +78,7 @@ DEP_LIBS_$(1) = $$(foreach lib,$$(filter %.a,$$(COMPONENTS_$(1))),$$(dir $$(lib)
 DEP_OBJS_$(1) = $$(foreach obj,$$(filter %.o,$$(COMPONENTS_$(1))),$$(dir $$(obj))$$(OBJODIR)/$$(notdir $$(obj)))
 $$(BINODIR)/$(1): $$(OBJS) $$(DEP_OBJS_$(1)) $$(DEP_LIBS_$(1)) $$(DEPENDS_$(1))
 	@mkdir -p $$(BINODIR)
-	$$(CC) $$(DEP_LIBS_$(1)) $$(DEP_OBJS_$(1)) $$(DFLAGS) -o $$(BINODIR)/$(1)
+	$$(CC) $$(DEP_LIBS_$(1)) $$(DEP_OBJS_$(1)) $$(OBJS) $$(DFLAGS) -o $$(BINODIR)/$(1)
 endef
 
 #############################################################

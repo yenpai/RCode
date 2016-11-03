@@ -465,6 +465,27 @@ static DBusHandlerResult eddbus_filter (DBusConnection * conn, DBusMessage *mess
 	(void) conn; /* unused */
 }
 
+static int eddbus_match_add(DBusConnection * conn, char * type, char * ifname, char * mtname)
+{
+	DBusError     error;
+	char          match[256];
+	const char *  match_str = "type='%s',interface='%s',member='%s'";
+
+	dbus_error_init(&error);
+	snprintf(match, sizeof(match), match_str, type, ifname, mtname); 
+
+	dbus_bus_add_match(conn, match, &error);
+	if (dbus_error_is_set(&error))
+	{
+		LOG_E(TAG, "dbus_bus_add_match failed! match_str[%s], err[%s]",
+				match, error.message);
+		dbus_error_free(&error);
+		return -1;
+	}
+
+	return 0;
+}
+
 static int eddbus_bind_fds(MyEDLoop * this)
 {
 	Enumerator *  enumerator;
@@ -477,14 +498,32 @@ static int eddbus_bind_fds(MyEDLoop * this)
 	if (this->dbus_watchs->GetCount(this->dbus_watchs) == 0)
 		return 0;
 
-	/* Check signal event has been registered */
+	/* Register dbus match event */
 	enumerator = this->events->CreateEnumerator(this->events);
 	while ((event = enumerator->Enumerate(enumerator)))
 	{
-		if (event->type == EDEVT_TYPE_DBUS_METHOD || event->type == EDEVT_TYPE_DBUS_SIGNAL)
+		if (event->type == EDEVT_TYPE_DBUS_SIGNAL)
 		{
+			if (eddbus_match_add(this->dbus_conn, "signal", event->dbus_ifname, event->dbus_mtname) < 0)
+			{
+				enumerator->Destroy(enumerator);
+				return -1;
+			}
+
 			found = 1;
-			break;
+			continue;
+		}
+
+		if (event->type == EDEVT_TYPE_DBUS_METHOD)
+		{
+			if (eddbus_match_add(this->dbus_conn, "method", event->dbus_ifname, event->dbus_mtname) < 0)
+			{
+				enumerator->Destroy(enumerator);
+				return -1;
+			}
+
+			found = 1;
+			continue;
 		}
 	}
 	enumerator->Destroy(enumerator);
@@ -493,7 +532,7 @@ static int eddbus_bind_fds(MyEDLoop * this)
 		return 0;
 
 	if (dbus_connection_add_filter(this->dbus_conn, eddbus_filter, this, NULL) == FALSE)
-		return -1;
+		return -2;
 
 	/* Bind all watch into current fds */
 	enumerator = this->dbus_watchs->CreateEnumerator(this->dbus_watchs);
@@ -515,7 +554,7 @@ static int eddbus_bind_fds(MyEDLoop * this)
 		if (edloop_setup_new_fds(this, pfd) < 0)
 		{
 			enumerator->Destroy(enumerator);
-			return -1;
+			return -3;
 		}
 	}
 	enumerator->Destroy(enumerator);
@@ -747,9 +786,6 @@ static int M_RegDBusConn(EDLoop * self, DBusConnection * pConn)
 		LOG_E(TAG, "dbus_connection_set_watch_functions failed!");
 		return -2;
 	}
-
-	dbus_bus_add_match(pConn, "type='signal'", NULL);
-	dbus_bus_add_match(pConn, "type='method_call'", NULL);
 
 	this->dbus_conn = pConn;
 	return 0;

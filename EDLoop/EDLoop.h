@@ -5,12 +5,15 @@
 #define EDLOOP_SUPPORT_SYSSIG
 //#define EDLOOP_SUPPORT_CUSSIG
 //#define EDLOOP_SUPPORT_IOEVT
-//#define EDLOOP_SUPPORT_DBUS
+#define EDLOOP_SUPPORT_DBUS
 
 typedef struct EDLoop  EDLoop;
 typedef struct EDEvent EDEvent;
 
 #if (defined(EDLOOP_SUPPORT_SYSSIG) || defined(EDLOOP_SUPPORT_CUSSIG))
+#ifdef EDLOOP_SUPPORT_SYSSIG
+#include <signal.h>
+#endif
 typedef void (*EDLoopSignalCB) (EDLoop *, int sig);
 #endif
 
@@ -42,6 +45,7 @@ struct EDLoop {
 #endif
 	
 #ifdef EDLOOP_SUPPORT_DBUS
+	int  (* const RegDBusConn)   (EDLoop *, DBusConnection * pConn);
 	int  (* const RegDBusMethod) (EDLoop *, char * ifname, char * method, EDLoopDBusCB cb);
 	int  (* const RegDBusSignal) (EDLoop *, char * ifname, char * signal, EDLoopDBusCB cb);
 #endif
@@ -75,7 +79,8 @@ struct EDEvent {
 		int  ioevt_fd;
 #endif
 #ifdef EDLOOP_SUPPORT_DBUS
-		char dbus_id[2][64]; /* For DBus Interface and Signal(Method) */ 
+		char dbus_ifname[64];
+		char dbus_mtname[64];
 #endif
     };
 

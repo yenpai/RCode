@@ -47,7 +47,7 @@ DEPS    := $(CSRCS:%.c=$(OBJODIR)/%.d)
 
 CCFLAGS       ?= -g -Wall
 CFLAGS        ?= $(strip $(CCFLAGS) $(EXTRA_CFLAGS) $(INCLUDES))
-DFLAGS        ?= $(strip $(CCFLAGS) $(EXTRA_LDFLAGS) $(LINKLIBS))
+DFLAGS        ?= $(strip $(LDFLAGS) $(EXTRA_LDFLAGS) $(LINKLIBS))
 INCLUDES      := -I$(TDIR)/include $(INCLUDES)
 LINKLIBS      := -lpthread $(LINKLIBS)
 

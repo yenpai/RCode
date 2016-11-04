@@ -11,6 +11,8 @@ TDIR := $(realpath ./)
 #                    rolled up into a generated libs/bins
 #############################################################
 
+SUBDIRS = CLogger Container EDLoop Sample 
+
 #############################################################
 # Compile Variables
 #############################################################

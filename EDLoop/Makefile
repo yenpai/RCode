@@ -19,7 +19,6 @@ GEN_LIBS = libEDLoop.a
 
 DBUS_INCLUDES ?= -I/usr/include/dbus-1.0 -I/usr/lib/x86_64-linux-gnu/dbus-1.0/include
 
-#DEFINES  :=
 INCLUDES := -I$(TDIR)/Container -I$(TDIR)/CLogger
 INCLUDES += $(DBUS_INCLUDES)
 

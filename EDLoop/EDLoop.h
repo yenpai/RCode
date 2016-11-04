@@ -79,8 +79,10 @@ struct EDEvent {
 		int  ioevt_fd;
 #endif
 #ifdef EDLOOP_SUPPORT_DBUS
-		char dbus_ifname[64];
-		char dbus_mtname[64];
+		struct {
+			char dbus_ifname[64];
+			char dbus_mtname[64];
+		};
 #endif
     };
 

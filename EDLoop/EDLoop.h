@@ -2,101 +2,32 @@
 #define _EDLOOP_H_
 
 #define EDLOOP_SUPPORT_LOGGER
-#define EDLOOP_SUPPORT_SYSSIG
-//#define EDLOOP_SUPPORT_CUSSIG
-//#define EDLOOP_SUPPORT_IOEVT
-#define EDLOOP_SUPPORT_DBUS
 
-typedef struct EDLoop  EDLoop;
-typedef struct EDEvent EDEvent;
+#include <stdint.h>
+#include <poll.h>
 
-#if (defined(EDLOOP_SUPPORT_SYSSIG) || defined(EDLOOP_SUPPORT_CUSSIG))
-#ifdef EDLOOP_SUPPORT_SYSSIG
-#include <signal.h>
-#endif
-typedef void (*EDLoopSignalCB) (EDLoop *, int sig);
-#endif
-
-#ifdef EDLOOP_SUPPORT_IOEVT
-typedef void (*EDLoopIOEvtCB)  (EDLoop *, int fd);
-#endif
-
-#ifdef EDLOOP_SUPPORT_DBUS
-#include "dbus/dbus.h"
-typedef void (*EDLoopDBusCB)   (EDLoop *, DBusMessage * msg);
-#endif
+typedef struct EDLoop          EDLoop;
+typedef struct EDEvt           EDEvt;
+typedef enum {
+	EDRTN_ERROR         = -1,
+	EDRTN_SUCCESS		= 0,
+	EDRTN_EVT_BIND_IGNORE,
+	EDRTN_EVT_BIND_NEXT,
+	EDRTN_EVT_HANDLE_NOT_YET,
+} EDRtn;
 
 struct EDLoop {
-
+	int  (* const AddEvt)        (EDLoop *, EDEvt *);
 	int  (* const Loop)          (EDLoop *);
 	void (* const Stop)          (EDLoop *);
 	void (* const Destroy)       (EDLoop *);
-
-#ifdef EDLOOP_SUPPORT_SYSSIG
-	int  (* const RegSysSignal)  (EDLoop *, int sig, EDLoopSignalCB cb);
-#endif
-
-#ifdef EDLOOP_SUPPORT_CUSSIG
-	int  (* const RegCusSignal)  (EDLoop *, int sig, EDLoopSignalCB cb);
-#endif
-
-#ifdef EDLOOP_SUPPORT_IOEVT
-	int  (* const RegIOEvt)      (EDLoop *, int fd,  int events, EDLoopIOEvtCB cb);
-#endif
-	
-#ifdef EDLOOP_SUPPORT_DBUS
-	int  (* const RegDBusConn)   (EDLoop *, DBusConnection * pConn);
-	int  (* const RegDBusMethod) (EDLoop *, char * ifname, char * method, EDLoopDBusCB cb);
-	int  (* const RegDBusSignal) (EDLoop *, char * ifname, char * signal, EDLoopDBusCB cb);
-#endif
-
 };
 
-struct EDEvent {
-	enum {
-		EDEVT_TYPE_MIN		   = 0,
-#ifdef EDLOOP_SUPPORT_SYSSIG
-		EDEVT_TYPE_SYSSIG      = 1,
-#endif
-#ifdef EDLOOP_SUPPORT_CUSSIG
-		EDEVT_TYPE_CUSSIG      = 2,
-#endif
-#ifdef EDLOOP_SUPPORT_IOEVT
-		EDEVT_TYPE_IOEVT       = 3,
-#endif
-#ifdef EDLOOP_SUPPORT_DBUS
-		EDEVT_TYPE_DBUS_SIGNAL = 4,
-		EDEVT_TYPE_DBUS_METHOD = 5,
-#endif
-		EDEVT_TYPE_MAX,
-	} type;
-
-    union {
-#if (defined(EDLOOP_SUPPORT_SYSSIG) || defined(EDLOOP_SUPPORT_CUSSIG))
-		int  signal_id;
-#endif
-#ifdef EDLOOP_SUPPORT_IOEVT
-		int  ioevt_fd;
-#endif
-#ifdef EDLOOP_SUPPORT_DBUS
-		struct {
-			char dbus_ifname[64];
-			char dbus_mtname[64];
-		};
-#endif
-    };
-
-	union {
-#if (defined(EDLOOP_SUPPORT_SYSSIG) || defined(EDLOOP_SUPPORT_CUSSIG))
-		EDLoopSignalCB signal_cb;
-#endif
-#ifdef EDLOOP_SUPPORT_IOEVT
-		EDLoopIOEvtCB  ioevt_cb;
-#endif
-#ifdef EDLOOP_SUPPORT_DBUS
-		EDLoopDBusCB   dbus_cb;
-#endif
-	};
+struct EDEvt {
+	EDRtn (* const Subscribe) (EDEvt *, void * pInfo);
+	EDRtn (* const Bind)      (EDEvt *, struct pollfd *pfd, uint32_t *idx);
+	EDRtn (* const Handle)    (EDEvt *, struct pollfd *pfd);
+	void  (* const Destroy)   (EDEvt *);
 };
 
 EDLoop * EDLoopCreate();

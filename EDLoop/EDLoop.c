@@ -7,23 +7,16 @@
 #include "EDLoop.h"
 
 typedef struct MyEDLoop MyEDLoop;
+typedef struct MyEvtMap MyEvtMap;
+
 struct MyEDLoop {
 	EDLoop			self;
-	uint8_t			status; /* bit[0] running, bit[1] need_stop */
-	LinkedList *	events;
+	uint8_t			status;  /* bit[0] running, bit[1] need_stop */
+	LinkedList *	events;  /* EDEvt */
 
-	struct pollfd * poll_fds;
-	nfds_t          poll_cur_nfds;
-	nfds_t          poll_max_nfds;
-
-#ifdef EDLOOP_SUPPORT_SYSSIG
-	int				syssig_fd;		/* system signalfd of kernel */
-#endif
-
-#ifdef EDLOOP_SUPPORT_DBUS
-	DBusConnection * dbus_conn;
-	LinkedList *     dbus_watchs;
-#endif
+	struct pollfd * pfds;
+	nfds_t          pfds_cur;
+	nfds_t          pfds_max;
 };
 
 /**************************************************************/
@@ -32,6 +25,9 @@ struct MyEDLoop {
 #include "CLogger.h"
 #define TAG "EDLOOP"
 #else
+#define LOG_V(...) do {} while(0)
+#define LOG_I(...) do {} while(0)
+#define LOG_W(...) do {} while(0)
 #define LOG_D(...) do {} while(0)
 #define LOG_E(...) do {} while(0)
 #endif
@@ -62,621 +58,109 @@ struct MyEDLoop {
 
 static int edloop_expand_fds(MyEDLoop * this, nfds_t nfds)
 {
-	if (nfds > this->poll_max_nfds)
+	if (nfds > this->pfds_max)
 	{
-		if (this->poll_fds == NULL)
+		if (this->pfds == NULL)
 		{
-			if ((this->poll_fds = malloc(sizeof(struct pollfd) * nfds)) == NULL)
+			if ((this->pfds = malloc(sizeof(struct pollfd) * nfds)) == NULL)
 				return -1;
 		}
 		else
 		{
-			if ((this->poll_fds = realloc(this->poll_fds, sizeof(struct pollfd) * nfds)) == NULL)
+			if ((this->pfds = realloc(this->pfds, sizeof(struct pollfd) * nfds)) == NULL)
 				return -2;
 		}
 
-		this->poll_max_nfds = nfds;
+		this->pfds_max = nfds;
 	}
 	
 	return 0;
 }
-
-static int edloop_setup_new_fds(MyEDLoop * this, struct pollfd pfd)
-{
-	nfds_t num = this->poll_cur_nfds;
-
-	if (edloop_expand_fds(this, num + 1) < 0)
-		return -1;
-
-	this->poll_cur_nfds = num + 1;
-	this->poll_fds[num] = pfd;
-	return 0;
-}
-
-/**************************************************************/
-/****                EDLOOP_SUPPORT_SYSSIG                *****/
-/**************************************************************/
-#ifdef EDLOOP_SUPPORT_SYSSIG
-#include <sys/signalfd.h>
-
-static EDEvent * syssig_find_event(LinkedList * events, int sig)
-{
-	Enumerator * enumerator;
-	EDEvent    * event = NULL;
-
-	enumerator = events->CreateEnumerator(events);
-	while ((event = enumerator->Enumerate(enumerator)))
-	{
-		if (event->type == EDEVT_TYPE_SYSSIG && event->signal_id == sig)
-			break;
-	}
-	enumerator->Destroy(enumerator);
-
-	return event;
-}
-
-static int syssig_remove_event(LinkedList * events, int sig)
-{
-	Enumerator * enumerator;
-	EDEvent    * event = NULL;
-
-	enumerator = events->CreateEnumerator(events);
-	while ((event = enumerator->Enumerate(enumerator)))
-	{
-		if (event->type == EDEVT_TYPE_SYSSIG && event->signal_id == sig)
-		{
-			events->RemoveAt(events, enumerator);
-			enumerator->Destroy(enumerator);
-			free(event);
-			return 0;
-		}
-	}
-	enumerator->Destroy(enumerator);
-
-	return -1;
-}
-
-static int syssig_register_event(LinkedList * events, int sig, EDLoopSignalCB cb)
-{
-	EDEvent * event = NULL;
-
-	if (sig < 1 || sig > SIGRTMAX)
-		return -1;
-
-	/* Check this event has been regiseteed */
-	if ((event = syssig_find_event(events, sig)) != NULL)
-	{
-		if (cb == NULL)
-		{
-			/* Remove this signal when cb was NULL */
-			syssig_remove_event(events, sig);
-		}
-		else
-		{
-			/* Change this signal callback only */
-			event->signal_cb = cb;
-		}
-
-		return 0;
-	}
-
-	if (cb == NULL)
-		return -2;
-
-	/* Create new event for this setting */
-	if ((event = malloc(sizeof(EDEvent))) == NULL)
-		return -3;
-
-	memset(event, 0, sizeof(EDEvent));
-	event->type = EDEVT_TYPE_SYSSIG; 
-	event->signal_id = sig;
-	event->signal_cb = cb;
-
-	if (events->InsertLast(events, event) < 0)
-	{
-		free(event);
-		return -4;
-	}
-
-	return 0;
-}
-
-static int syssig_bind_fds(MyEDLoop * this)
-{
-	Enumerator *  enumerator;
-	EDEvent    *  event = NULL;
-	sigset_t      mask;
-	int           found = 0;
-	struct pollfd pfd;
-
-	sigemptyset (&mask);
-
-	/* Check signal event has been registered */
-	enumerator = this->events->CreateEnumerator(this->events);
-	while ((event = enumerator->Enumerate(enumerator)))
-	{
-		if (event->type == EDEVT_TYPE_SYSSIG)
-		{
-			sigaddset(&mask, event->signal_id);
-			found = 1;
-		}
-	}
-	enumerator->Destroy(enumerator);
-
-	if (found == 0)
-		return 0;
-
-	/* Block the signals that we handle using signalfd */
-	if (sigprocmask(SIG_BLOCK, &mask, NULL) < 0)
-		return -1;
-
-	/* Recreate signalfd */
-	if (this->syssig_fd > 0)
-		close(this->syssig_fd);
-
-	if ((this->syssig_fd = signalfd(-1, &mask, 0)) < 0)
-		return -2;
-
-	/* Bind into current fds */
-	pfd.fd      = this->syssig_fd;
-	pfd.events  = POLLIN;
-	pfd.revents = 0;
-	if (edloop_setup_new_fds(this, pfd) < 0)
-		return -3;
-
-	return 0;
-}
-
-static int syssig_handle_pfd(MyEDLoop * this, struct pollfd * pfd)
-{
-	EDEvent * event = NULL;
-	struct signalfd_siginfo si;
-	ssize_t size;
-
-	if (pfd->fd != this->syssig_fd)
-		return 1;
-
-	if (pfd->revents & POLLERR)
-		return -1;
-
-	if (!(pfd->revents & POLLIN))
-		return 0;
-
-	if ((size = read(pfd->fd, &si, sizeof(si))) != sizeof(si))
-		return -2;
-
-	if ((event = syssig_find_event(this->events, si.ssi_signo)) == NULL)
-		return 0;
-
-	event->signal_cb(&this->self, event->signal_id);
-	return 0;
-}
-
-static int syssig_init(MyEDLoop * this)
-{
-	this->syssig_fd = -1;
-	return 0;
-}
-
-static void syssig_destroy(MyEDLoop * this)
-{
-	if (this->syssig_fd > 0)
-		close(this->syssig_fd);
-}
-
-#endif
-
-/**************************************************************/
-/****                EDLOOP_SUPPORT_DBUS                  *****/
-/**************************************************************/
-#ifdef EDLOOP_SUPPORT_DBUS
-
-static EDEvent * eddbus_find_event(LinkedList * events, uint32_t type, char * ifname, char * mtname)
-{
-	Enumerator * enumerator;
-	EDEvent    * event = NULL;
-
-	enumerator = events->CreateEnumerator(events);
-	while ((event = enumerator->Enumerate(enumerator)))
-	{
-		if (	event->type == type && 
-				strcmp(event->dbus_ifname, ifname) == 0 &&
-				strcmp(event->dbus_mtname, mtname) == 0 )
-			break;
-	}
-	enumerator->Destroy(enumerator);
-
-	return event;
-}
-
-static int eddbus_remove_event(LinkedList * events, uint32_t type, char * ifname, char * mtname)
-{
-	Enumerator * enumerator;
-	EDEvent    * event = NULL;
-
-	enumerator = events->CreateEnumerator(events);
-	while ((event = enumerator->Enumerate(enumerator)))
-	{
-		if (	event->type == type && 
-				strcmp(event->dbus_ifname, ifname) == 0 &&
-				strcmp(event->dbus_mtname, mtname) == 0 )
-		{
-			events->RemoveAt(events, enumerator);
-			enumerator->Destroy(enumerator);
-			free(event);
-			return 0;
-		}
-	}
-	enumerator->Destroy(enumerator);
-
-	return -1;
-}
-
-static int eddbus_register_event(LinkedList * events, uint32_t type, char * ifname, char * mtname, EDLoopDBusCB cb)
-{
-	EDEvent * event = NULL;
-
-	if (type != EDEVT_TYPE_DBUS_METHOD && type != EDEVT_TYPE_DBUS_SIGNAL)
-		return -1;
-	if (ifname == NULL || ifname[0] == '\0' || strlen(ifname) >= sizeof(event->dbus_ifname))
-		return -1;
-	if (mtname == NULL || mtname[0] == '\0' || strlen(mtname) >= sizeof(event->dbus_mtname))
-		return -1;
-	
-	/* Check this event has been regiseteed */
-	if ((event = eddbus_find_event(events, type, ifname, mtname)) != NULL)
-	{
-		if (cb == NULL)
-		{
-			/* Remove this signal when cb was NULL */
-			eddbus_remove_event(events, type, ifname, mtname);
-		}
-		else
-		{
-			/* Change this signal callback only */
-			event->dbus_cb = cb;
-		}
-
-		return 0;
-	}
-
-	/* Check callback function before register new event */
-	if (cb == NULL)
-		return -2;
-
-	/* Create new event for this setting */
-	if ((event = malloc(sizeof(EDEvent))) == NULL)
-		return -3;
-
-	memset(event, 0, sizeof(EDEvent));
-	event->type		 = type; 
-	event->dbus_cb   = cb;
-	strcpy(event->dbus_ifname, ifname);
-	strcpy(event->dbus_mtname, mtname);
-
-	if (events->InsertLast(events, event) < 0)
-	{
-		free(event);
-		return -4;
-	}
-
-	return 0;
-}
-
-static dbus_bool_t eddbus_watch_add(DBusWatch * watch, void * data)
-{
-	MyEDLoop * this = data;
-
-	LOG_D(TAG, "Add DBusWatch");
-
-	if (this->dbus_watchs->InsertLast(this->dbus_watchs, watch) < 0)
-		return FALSE;
-
-	return TRUE;
-}
-
-static void eddbus_watch_remove(DBusWatch * watch, void * data)
-{
-	MyEDLoop   * this = data;
-	Enumerator * enumerator;
-	DBusWatch  * watch2;
-	int found = 0;
-
-	LOG_D(TAG, "Remove DBusWatch");
-
-	enumerator = this->dbus_watchs->CreateEnumerator(this->dbus_watchs);
-	while ((watch2 = enumerator->Enumerate(enumerator)))
-	{
-		if (watch == watch2)
-		{
-			this->dbus_watchs->RemoveAt(this->dbus_watchs, enumerator);
-			enumerator->Destroy(enumerator);
-			found = 1;
-			break;
-		}
-	}
-	enumerator->Destroy(enumerator);
-
-	if (found == 0)
-	{
-		LOG_D(TAG, "Cannot found the dbus watch in list, Ignore.");
-		return;
-	}
-}
-
-static void eddbus_watch_toggle(DBusWatch * watch, void * data) 
-{
-	if (dbus_watch_get_enabled(watch))
-	{
-		LOG_D(TAG, "DBus Watch Toggle to Enabled.");
-		eddbus_watch_add(watch, data);
-	}
-	else
-	{
-		LOG_D(TAG, "DBus Watch Toggle to Disabled.");
-		eddbus_watch_remove(watch, data);
-	}
-}
-
-static DBusHandlerResult eddbus_filter(DBusConnection * conn, DBusMessage *message, void * pdata)
-{
-	MyEDLoop * this = pdata;
-	Enumerator * enumerator;
-	EDEvent    * event = NULL;
-
-	LOG_V(TAG, "DBus Message Filter [%d][%s -> %s][%s][%s][%s]%s",
-           dbus_message_get_type(message),
-           dbus_message_get_sender(message),
-           dbus_message_get_destination(message),
-           dbus_message_get_path(message),
-           dbus_message_get_interface(message),
-           dbus_message_get_member(message),
-           dbus_message_get_type(message) == DBUS_MESSAGE_TYPE_ERROR ?
-           dbus_message_get_error_name(message) : "");
-
-	/* Check signal event has been registered */
-	enumerator = this->events->CreateEnumerator(this->events);
-	while ((event = enumerator->Enumerate(enumerator)))
-	{
-		if (event->type == EDEVT_TYPE_DBUS_METHOD)
-		{
-			if (dbus_message_is_method_call(
-						message, 
-						event->dbus_ifname,
-						event->dbus_mtname))
-			{
-
-				event->dbus_cb(&this->self, message);
-				enumerator->Destroy(enumerator);
-				return DBUS_HANDLER_RESULT_HANDLED;
-			}
-
-			continue;
-		}
-
-		if (event->type == EDEVT_TYPE_DBUS_SIGNAL)
-		{
-			if (dbus_message_is_signal(
-						message, 
-						event->dbus_ifname,
-						event->dbus_mtname))
-			{
-				event->dbus_cb(&this->self, message);
-				enumerator->Destroy(enumerator);
-				return DBUS_HANDLER_RESULT_HANDLED;
-			}
-
-			continue;
-		}
-	}
-	enumerator->Destroy(enumerator);
-
-	return DBUS_HANDLER_RESULT_NOT_YET_HANDLED;
-
-	(void) conn; /* unused */
-}
-
-static int eddbus_match_add(DBusConnection * conn, char * type, char * ifname, char * mtname)
-{
-	DBusError     error;
-	char          match[256];
-	const char *  match_str = "type='%s',interface='%s',member='%s'";
-
-	dbus_error_init(&error);
-	snprintf(match, sizeof(match), match_str, type, ifname, mtname);
-
-	dbus_bus_add_match(conn, match, &error);
-	dbus_connection_flush(conn);
-	if (dbus_error_is_set(&error))
-	{
-		LOG_E(TAG, "dbus_bus_add_match failed! match_str[%s], err[%s]",
-				match, error.message);
-		dbus_error_free(&error);
-		return -1;
-	}
-
-	dbus_connection_read_write_dispatch(conn, 0);
-	return 0;
-}
-
-static int eddbus_bind_fds(MyEDLoop * this)
-{
-	Enumerator *  enumerator;
-	EDEvent    *  event = NULL;
-	DBusWatch  *  watch = NULL;
-	uint8_t       found = 0;
-	uint32_t      flags;
-	struct pollfd pfd;
-
-	if (this->dbus_watchs->GetCount(this->dbus_watchs) == 0)
-		return 0;
-
-	/* Register dbus match event */
-	enumerator = this->events->CreateEnumerator(this->events);
-	while ((event = enumerator->Enumerate(enumerator)))
-	{
-		if (event->type == EDEVT_TYPE_DBUS_SIGNAL)
-		{
-			found = 1;
-			break;
-		}
-		
-		if (event->type == EDEVT_TYPE_DBUS_METHOD)
-		{
-			found = 1;
-			break;
-		}
-	}
-	enumerator->Destroy(enumerator);
-
-	if (found == 0)
-		return 0;
-
-	/* Bind all watch into current fds */
-	enumerator = this->dbus_watchs->CreateEnumerator(this->dbus_watchs);
-	while ((watch = enumerator->Enumerate(enumerator)))
-	{
-		if (!dbus_watch_get_enabled(watch))
-			continue;
-
-		pfd.fd      = dbus_watch_get_unix_fd(watch);
-		pfd.events  = 0;
-		pfd.revents = 0;
-
-		flags = dbus_watch_get_flags(watch);
-		if (flags & DBUS_WATCH_READABLE)
-			pfd.events |= POLLIN;
-		if (flags & DBUS_WATCH_WRITABLE)
-			pfd.events |= POLLOUT;
-
-		if (pfd.events == 0)
-			continue;
-
-		if (edloop_setup_new_fds(this, pfd) < 0)
-		{
-			enumerator->Destroy(enumerator);
-			return -3;
-		}
-	}
-	enumerator->Destroy(enumerator);
-
-	return 0;
-}
-
-static int eddbus_handle_pfd(MyEDLoop * this, struct pollfd * pfd)
-{
-	Enumerator * enumerator;
-	DBusWatch  * watch = NULL;
-	uint8_t      found = 0;
-	uint32_t     flags = 0;
-
-	/* Check FD was DBus Watch */
-	enumerator = this->dbus_watchs->CreateEnumerator(this->dbus_watchs);
-	while ((watch = enumerator->Enumerate(enumerator)))
-	{
-		if (dbus_watch_get_unix_fd(watch) == pfd->fd)
-		{
-			found = 1;
-			break;
-		}
-	}
-	enumerator->Destroy(enumerator);
-
-	if (found == 0)
-		return 1;
-
-	if (pfd->revents & POLLERR)
-		flags |= DBUS_WATCH_ERROR;
-	if (pfd->revents & POLLHUP)
-		flags |= DBUS_WATCH_HANGUP;
-	if (pfd->revents & POLLIN)
-		flags |= DBUS_WATCH_READABLE;
-	if (pfd->revents & POLLOUT)
-		flags |= DBUS_WATCH_WRITABLE;
-
-	LOG_D(TAG, "DBus watch event: fd[%d], events[%d]", pfd->fd, pfd->revents);
-	if (!dbus_watch_handle(watch, flags))
-		return -1;
-
-	LOG_D(TAG, "DBus handle dispatching.");
-	do {
-		dbus_connection_read_write_dispatch(this->dbus_conn, 0);
-	} while (DBUS_DISPATCH_DATA_REMAINS == dbus_connection_get_dispatch_status(this->dbus_conn));
-
-	return 0;
-}
-
-static int eddbus_init(MyEDLoop * this)
-{
-	this->dbus_conn = NULL;
-
-	if ((this->dbus_watchs = LinkedListCreate()) == NULL)
-		return -1;
-
-	return 0;
-}
-
-static void eddbus_destroy(MyEDLoop * this)
-{
-	DBusWatch * watch = NULL;
-
-	if (this->dbus_watchs)
-	{
-		while ((watch = this->dbus_watchs->RemoveLast(this->dbus_watchs)))
-			dbus_watch_set_data(watch, NULL, NULL);
-	}
-}
-
-#endif
-
-/**************************************************************/
-/****                EDLOOP Polling Loop                  *****/
-/**************************************************************/
 
 static int edloop_update_fds(MyEDLoop * this)
 {
+	Enumerator    * enumerator;
+	EDEvt         * event  = NULL;
+	struct pollfd * pfd    = NULL;
+	uint32_t idx;
+	EDRtn    rtn;
+
+	LOG_V(TAG, "edloop update all fds by events.");
+
 	/* ReInitial and Setup poll fds */
-	this->poll_cur_nfds = 0;
+	this->pfds_cur = 0;
 
-#ifdef EDLOOP_SUPPORT_SYSSIG
-	if (syssig_bind_fds(this) < 0)
-		return -1;
-#endif
+	enumerator = this->events->CreateEnumerator(this->events);
+	while ((event = enumerator->Enumerate(enumerator)))
+	{
+		idx = 0;
 
-#ifdef EDLOOP_SUPPORT_DBUS
-	if (eddbus_bind_fds(this) < 0)
-		return -2;
-#endif
+		do {
+
+			/* Expand ones fds for event bind */
+			if (edloop_expand_fds(this, this->pfds_cur + 1) < 0)
+			{
+				LOG_E(TAG, "edloop_expand_fds Failed!");
+				return -1;
+			}
+			pfd = &this->pfds[this->pfds_cur];
+
+			/* Bind event to current pfd */
+			if ((rtn = event->Bind(event, pfd, &idx)) == EDRTN_ERROR)
+			{
+				LOG_E(TAG, "Event Bind Failed!");
+				return -1;
+			}
+
+			if (rtn == EDRTN_EVT_BIND_IGNORE)
+				break;
+			
+			this->pfds_cur++;
+
+			if (rtn == EDRTN_SUCCESS)
+				break;
+			
+			idx++;
+
+		} while (rtn == EDRTN_EVT_BIND_NEXT);
+
+	}
+	enumerator->Destroy(enumerator);
 
 	return 0;
 }
 
 static int edloop_handle_fds(MyEDLoop * this)
 {
-	int ret;
+	Enumerator * enumerator;
+	EDEvt      * event = NULL;
+	EDRtn        rtn;
 	nfds_t num;
 
-	for (num = 0 ; num < this->poll_cur_nfds ; num++)
+	LOG_V(TAG, "edloop handle all fds by events.");
+
+	for (num = 0 ; num < this->pfds_cur ; num++)
 	{
-		if (this->poll_fds[num].revents > 0)
+		if (IS_NEED_STOP(this))
+			return 0;
+
+		if (this->pfds[num].revents == 0)
+			continue;
+
+		enumerator = this->events->CreateEnumerator(this->events);
+		while ((event = enumerator->Enumerate(enumerator)))
 		{
-#ifdef EDLOOP_SUPPORT_SYSSIG
-			if ((ret = syssig_handle_pfd(this, &this->poll_fds[num])) < 0)
+			if ((rtn = event->Handle(event, &this->pfds[num])) == EDRTN_ERROR)
 			{
-				LOG_E(TAG, "syssig_handle_pfd error! ret[%d]", ret);
-				return ret;
+				LOG_E(TAG, "Event Handle Failed!");
+				enumerator->Destroy(enumerator);
+				return -1;
 			}
-			else if (ret == 0) continue;
-#endif
-#ifdef EDLOOP_SUPPORT_DBUS
-			if ((ret = eddbus_handle_pfd(this, &this->poll_fds[num])) < 0)
-			{
-				LOG_E(TAG, "eddbus_handle_pfd error! ret[%d]", ret);
-				return ret;
-			}
-			else if (ret == 0) continue;
-#endif
+
+			if (rtn == EDRTN_SUCCESS)
+				break;
 		}
+		enumerator->Destroy(enumerator);
 	}
 
 	return 0;
@@ -705,7 +189,7 @@ update_fds:
 		}
 
 		/* Check poll fds number */
-		if (this->poll_cur_nfds == 0)
+		if (this->pfds_cur == 0)
 		{
 			error_code = -2;
 			goto error_return;
@@ -715,10 +199,10 @@ update_fds:
 	/* Poll loop */
 	while (!IS_NEED_STOP(this))
 	{
-		LOG_D(TAG, "Start Poll, nfds[%d]", this->poll_cur_nfds);
+		LOG_D(TAG, "Start Poll, nfds[%d]", this->pfds_cur);
 
 		SET_POLLING(this, 1);
-		count = poll(this->poll_fds, this->poll_cur_nfds, timeout);
+		count = poll(this->pfds, this->pfds_cur, timeout);
 		SET_POLLING(this, 0);
 
 		if (count < 0)
@@ -752,91 +236,19 @@ error_return:
 /**************************************************************/
 /****                EDLOOP Public Method                 *****/
 /**************************************************************/
-#ifdef EDLOOP_SUPPORT_SYSSIG
-static int M_RegSysSignal(EDLoop * self, int sig, EDLoopSignalCB cb)
-{
-	MyEDLoop * this  = (MyEDLoop *) self;
-	return syssig_register_event(this->events, sig, cb);
-}
-#endif
 
-#ifdef EDLOOP_SUPPORT_CUSSIG
-static int M_RegCusSignal(EDLoop * self, int sig, EDLoopSignalCB cb)
-{
-	return -1;
-}
-#endif
 
-#ifdef EDLOOP_SUPPORT_IOEVT
-static int M_RegIOEvt(EDLoop * self, int fd,  int events, EDLoopIOEvtCB cb)
-{
-	return -1;
-}
-#endif
-	
-#ifdef EDLOOP_SUPPORT_DBUS
-static int M_RegDBusConn(EDLoop * self, DBusConnection * pConn)
+static int M_AddEvt(EDLoop * self, EDEvt * evt)
 {
 	MyEDLoop * this = (MyEDLoop *) self;
 
-	if (this->dbus_conn)
-		return -1;
-
-	/* Setup dbus watch */
-	if (!dbus_connection_set_watch_functions(
-				pConn, 
-				eddbus_watch_add, 
-				eddbus_watch_remove, 
-				eddbus_watch_toggle, 
-				this, NULL))
-	{
-		LOG_E(TAG, "dbus_connection_set_watch_functions failed!");
-		return -2;
-	}
-
-	if (dbus_connection_add_filter(pConn, eddbus_filter, this, NULL) == FALSE)
-		return -3;
-
-	this->dbus_conn = pConn;
-	return 0;
-}
-
-static int M_RegDBusMethod(EDLoop * self, char * ifname, char * method, EDLoopDBusCB cb)
-{
-	MyEDLoop * this = (MyEDLoop *) self;
-
-	if (eddbus_register_event(this->events, EDEVT_TYPE_DBUS_METHOD, ifname, method, cb) < 0)
-	{
-		return -1;
-	}
-
-	if (eddbus_match_add(this->dbus_conn, "method_call", ifname, method) < 0)
-	{
-		return -2;
-	}
+	this->events->InsertLast(this->events, evt);
+	SET_NEED_UPDATE(this, 1);
 
 	return 0;
 }
 
-static int M_RegDBusSignal(EDLoop * self, char * ifname, char * signal, EDLoopDBusCB cb)
-{
-	MyEDLoop * this = (MyEDLoop *) self;
-
-	if (eddbus_register_event(this->events, EDEVT_TYPE_DBUS_SIGNAL, ifname, signal, cb) < 0)
-	{
-		return -1;
-	}
-
-	if (eddbus_match_add(this->dbus_conn, "signal", ifname, signal) < 0)
-	{
-		return -2;
-	}
-
-	return 0;
-}
-#endif
-
-static int M_Loop (EDLoop * self)
+static int M_Loop(EDLoop * self)
 {
 	MyEDLoop * this = (MyEDLoop *) self;
 	int error_code = 0;
@@ -852,7 +264,7 @@ static int M_Loop (EDLoop * self)
 	return error_code;
 }
 
-static void M_Stop (EDLoop * self)
+static void M_Stop(EDLoop * self)
 {
 	MyEDLoop * this = (MyEDLoop *) self;
 
@@ -862,23 +274,18 @@ static void M_Stop (EDLoop * self)
 	}
 }
 
-static void M_Destroy (EDLoop * self)
+static void M_Destroy(EDLoop * self)
 {
 	MyEDLoop * this = (MyEDLoop *) self;
 
 	if (this == NULL)
 		return;
 
-	if (this->poll_fds)
-		free(this->poll_fds);
+	if (this->pfds)
+		free(this->pfds);
 
-#ifdef EDLOOP_SUPPORT_SYSSIG
-	syssig_destroy(this);
-#endif
-
-#ifdef EDLOOP_SUPPORT_DBUS
-	eddbus_destroy(this);
-#endif
+	if (this->events)
+		this->events->Destroy(this->events);
 
 	free(this);
 }
@@ -889,23 +296,10 @@ EDLoop * EDLoopCreate()
 {
 	MyEDLoop * this = NULL;
 	EDLoop     self = (EDLoop) {
+		.AddEvt  = M_AddEvt,
 		.Loop    = M_Loop,
 		.Stop    = M_Stop,
 		.Destroy = M_Destroy,
-#ifdef EDLOOP_SUPPORT_SYSSIG
-		.RegSysSignal = M_RegSysSignal,
-#endif
-#ifdef EDLOOP_SUPPORT_CUSSIG
-		.RegCusSignal = M_RegCusSignal,
-#endif
-#ifdef EDLOOP_SUPPORT_IOEVT
-		.RegIOEvt     = M_RegIOEvt,
-#endif
-#ifdef EDLOOP_SUPPORT_DBUS
-		.RegDBusConn   = M_RegDBusConn,
-		.RegDBusMethod = M_RegDBusMethod,
-		.RegDBusSignal = M_RegDBusSignal,
-#endif
 	};
 
 	if ((this = malloc(sizeof(MyEDLoop))) == NULL)
@@ -919,25 +313,9 @@ EDLoop * EDLoopCreate()
 		return NULL;
 	}
 
-	this->poll_fds      = NULL;
-	this->poll_cur_nfds = 0;
-	this->poll_max_nfds = 0;
-
-#ifdef EDLOOP_SUPPORT_SYSSIG
-	if (syssig_init(this) < 0)
-	{
-		M_Destroy(&this->self);
-		return NULL;
-	}
-#endif
-
-#ifdef EDLOOP_SUPPORT_DBUS
-	if (eddbus_init(this) < 0)
-	{
-		M_Destroy(&this->self);
-		return NULL;
-	}
-#endif
+	this->pfds     = NULL;
+	this->pfds_cur = 0;
+	this->pfds_max = 0;
 
 	return &this->self;
 }

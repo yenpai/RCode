@@ -2,6 +2,8 @@
 #include "obtype.h"
 #include "CLogger.h"
 #include "EDLoop.h"
+#include "EDEvtSystemSignal.h"
+#include "EDEvtDBus.h"
 
 /*******************************************************************************/
 
@@ -13,6 +15,9 @@
 
 typedef struct {
 	EDLoop * loop;
+	EDEvt  * evtSysSig;
+	EDEvt  * evtDBus;
+
 	DBusConnection * dbus_conn;
 	DBusError        dbus_error;
 } WorkSpace;
@@ -22,7 +27,7 @@ CLogger     gLogger;
 
 /*******************************************************************************/
 
-static void OnSysSignal(EDLoop * loop, int sig)
+static void OnSysSignal(EDEvt * UNUSED(evt), int sig)
 {
 	switch (sig)
 	{
@@ -36,22 +41,22 @@ static void OnSysSignal(EDLoop * loop, int sig)
 
 		case SIGTERM:
 			LOG_D("EVT", "Recive System Signal [SIGTERM][%d].", sig);
-			loop->Stop(loop);
+			gWS->loop->Stop(gWS->loop);
 			break;
 	}
 }
 
-static void OnDBusMethod_Debug(EDLoop * UNUSED(loop), DBusMessage * UNUSED(msg))
+static void OnDBusMethod_Debug(EDEvt * UNUSED(evt), DBusMessage * UNUSED(msg))
 {
 	LOG_D("EVT", "Recive DBus Method Call [Debug].");
 }
 
-static void OnDBusSignal_Test1(EDLoop * UNUSED(loop), DBusMessage * UNUSED(msg))
+static void OnDBusSignal_Test1(EDEvt * UNUSED(evt), DBusMessage * UNUSED(msg))
 {
 	LOG_D("EVT", "Recive DBus Signal [Test1].");
 }
 
-static void OnDBusSignal_Test2(EDLoop * UNUSED(loop), DBusMessage * UNUSED(msg))
+static void OnDBusSignal_Test2(EDEvt * UNUSED(evt), DBusMessage * UNUSED(msg))
 {
 	LOG_D("EVT", "Recive DBus Signal [Test2].");
 }
@@ -69,60 +74,97 @@ static int Dispatch()
 	return 0;
 }
 
-static int InitSysSignal()
+static int InitEvtSysSig()
 {
 	int ret;
 	EDLoop * loop = gWS->loop;
+	EDEvt  * evt  = NULL;
 
-	if ((ret = loop->RegSysSignal(loop, SIGUSR1, OnSysSignal)) < 0)
+	if ((gWS->evtSysSig = EDEvtSysSigCreate()) == NULL)
+	{
+		LOG_E("INIT", "EDEvtSysSigCreate Failed!");
+		return -1;
+	}
+	
+	evt = gWS->evtSysSig;
+
+	if ((ret = evt->Subscribe(evt, &(EDEvtSysSigInfo){SIGUSR1, OnSysSignal})) < 0)
 	{
 		LOG_E("INIT", "RegSysSignal SIGUSR1 Failed! ret[%d]", ret);
 		return -1;
 	}
 
-	if ((ret = loop->RegSysSignal(loop, SIGUSR2, OnSysSignal)) < 0)
+	if ((ret = evt->Subscribe(evt, &(EDEvtSysSigInfo){SIGUSR2, OnSysSignal})) < 0)
 	{
 		LOG_E("INIT", "RegSysSignal SIGUSR2 Failed! ret[%d]", ret);
 		return -1;
 	}
 
-	if ((ret = loop->RegSysSignal(loop, SIGTERM, OnSysSignal)) < 0)
+	if ((ret = evt->Subscribe(evt, &(EDEvtSysSigInfo){SIGTERM, OnSysSignal})) < 0)
 	{
 		LOG_E("INIT", "RegSysSignal SIGTERM Failed! ret[%d]", ret);
 		return -1;
 	}
 
-	LOG_V("INIT", "Init System Signal Finish");
+	if ((ret = loop->AddEvt(loop, evt)) < 0)
+	{
+		LOG_E("INIT", "Add EDEvtSysSig Into Loop Failed! ret[%d]", ret);
+		return -1;
+	}
+
+	LOG_V("INIT", "Init System Signal Event Finish");
 	return 0;
 }
 
-static int InitDBusSubscribe()
+static int InitEvtDBus()
 {
 	int ret;
 	EDLoop * loop = gWS->loop;
+	EDEvt  * evt  = NULL;
 
-	if ((ret = loop->RegDBusMethod(loop, SAMPLE_DBUS_IFNAME, SAMPLE_DBUS_MET_DEBUG, OnDBusMethod_Debug)) < 0)
+	if ((gWS->evtDBus = EDEvtDBusCreate(gWS->dbus_conn)) == NULL)
 	{
-		LOG_E("INIT", "RegDBusMethod [%s][%s] Failed! ret[%d]", 
-				SAMPLE_DBUS_IFNAME, SAMPLE_DBUS_MET_DEBUG, ret);
+		LOG_E("INIT", "EDEvtDBusCreate Failed!");
 		return -1;
 	}
 
-	if ((ret = loop->RegDBusSignal(loop, SAMPLE_DBUS_IFNAME, SAMPLE_DBUS_SIG_TEST1, OnDBusSignal_Test1)) < 0)
+	evt = gWS->evtDBus;
+
+#define DBusSubM(m, c) evt->Subscribe(evt, &(EDEvtDBusInfo){EDEVT_DBUS_METHOD,SAMPLE_DBUS_IFNAME,m,c})
+#define DBusSubS(s, c) evt->Subscribe(evt, &(EDEvtDBusInfo){EDEVT_DBUS_SIGNAL,SAMPLE_DBUS_IFNAME,s,c})
+
+	LOG_V("INIT", "Subscribe 1");
+
+	if ((ret = DBusSubM(SAMPLE_DBUS_MET_DEBUG, OnDBusMethod_Debug)) < 0)
 	{
-		LOG_E("INIT", "RegDBusSignal [%s][%s] Failed! ret[%d]", 
-				SAMPLE_DBUS_IFNAME, SAMPLE_DBUS_SIG_TEST1, ret);
+		LOG_E("INIT", "Subscribe DBus Method [%s] Failed! ret[%d]", 
+				SAMPLE_DBUS_MET_DEBUG, ret);
 		return -1;
 	}
 
-	if ((ret = loop->RegDBusSignal(loop, SAMPLE_DBUS_IFNAME, SAMPLE_DBUS_SIG_TEST2, OnDBusSignal_Test2)) < 0)
+	LOG_V("INIT", "Subscribe 2"); 
+
+	if ((ret = DBusSubS(SAMPLE_DBUS_SIG_TEST1, OnDBusSignal_Test1)) < 0)
 	{
-		LOG_E("INIT", "RegDBusSignal [%s][%s] Failed! ret[%d]", 
-				SAMPLE_DBUS_IFNAME, SAMPLE_DBUS_SIG_TEST2, ret);
+		LOG_E("INIT", "Subscribe DBus Signal [%s] Failed! ret[%d]", 
+				SAMPLE_DBUS_SIG_TEST1, ret);
 		return -1;
 	}
 
-	LOG_V("INIT", "Init DBusSubscribe Finish");
+	if ((ret = DBusSubS(SAMPLE_DBUS_SIG_TEST2, OnDBusSignal_Test2)) < 0)
+	{
+		LOG_E("INIT", "Subscribe DBus Signal [%s] Failed! ret[%d]", 
+				SAMPLE_DBUS_SIG_TEST2, ret);
+		return -1;
+	}
+
+	if ((ret = loop->AddEvt(loop, evt)) < 0)
+	{
+		LOG_E("INIT", "Add EDEvtDBus Into Loop Failed! ret[%d]", ret);
+		return -1;
+	}
+
+	LOG_V("INIT", "Init DBus Event Finish");
 	return 0;
 }
 
@@ -162,12 +204,6 @@ static int InitDBusConn()
 	if (ret != DBUS_REQUEST_NAME_REPLY_PRIMARY_OWNER)
 	{
 		LOG_E("INIT", "dbus_bus_request_name Failed! Not Primary Owner! ret[%d]", ret);
-		return -4;
-	}
-
-	if ((ret = gWS->loop->RegDBusConn(gWS->loop, *conn)) < 0)
-	{
-		LOG_E("INIT", "RegDBusConn into EDLoop Failed! ret[%d]", ret);
 		return -4;
 	}
 
@@ -212,21 +248,21 @@ int main(int UNUSED(argc), char * UNUSED(argv[]))
 		exit(EXIT_FAILURE);
 	}
 
-	if (InitSysSignal() < 0)
+	if (InitEvtSysSig() < 0)
 	{
-		LOG_E("INIT", "InitSysSignal Failed!");
-		exit(EXIT_FAILURE);
-	}
-	
-	if (InitDBusConn() < 0)
-	{
-		LOG_E("INIT", "InitDBusConn Failed!");
+		LOG_E("INIT", "Init System Signal Event Failed!");
 		exit(EXIT_FAILURE);
 	}
 
-	if (InitDBusSubscribe() < 0)
+	if (InitDBusConn() < 0)
 	{
-		LOG_E("INIT", "InitDBusSubscribe Failed!");
+		LOG_E("INIT", "Init DBus Conn Failed!");
+		exit(EXIT_FAILURE);
+	}
+
+	if (InitEvtDBus() < 0)
+	{
+		LOG_E("INIT", "Init DBus Event Failed!");
 		exit(EXIT_FAILURE);
 	}
 

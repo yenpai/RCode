@@ -4,13 +4,15 @@
 #include <signal.h>
 #include "EDLoop.h"
 
+#define EDEvtSysSigInfoMagic   0xFFCC0002
+
 typedef struct EDEvtSysSigInfo EDEvtSysSigInfo;
-typedef void (*EDEvtSysSigCB) (EDEvt *, EDEvtSysSigInfo *);
 
 struct EDEvtSysSigInfo {
-	int           sig;
-	EDEvtSysSigCB cb;
-	void *        pData;
+	EDEvtInfo self;
+	int       sig;
+	void    * pData;
+	void   (* cb) (EDEvt *, EDEvtSysSigInfo *);
 };
 
 EDEvt * EDEvtSysSigCreate();

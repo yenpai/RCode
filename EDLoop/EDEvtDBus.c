@@ -281,11 +281,14 @@ static int eddbus_match_remove(DBusConnection * conn, EDEvtDBusInfo * info)
 /****                EvtDBus Private Method               *****/
 /**************************************************************/
 
-static EDRtn M_Subscribe(EDEvt * self, void * pInfo)
+static EDRtn M_Subscribe(EDEvt * self, EDEvtInfo * pInfo)
 {
-	EDEvtDBusInfo * info = pInfo;
+	EDEvtDBusInfo * info = (EDEvtDBusInfo *) pInfo;
 	MyEDEvt * this  = (MyEDEvt *) self;
 	MyEvent * event = NULL;
+
+	if (pInfo->magic != EDEvtDBusInfoMagic)
+		return EDRTN_ERROR;
 
 	/* Register new event if not exist */
 	if ((event = eddbus_find_event(

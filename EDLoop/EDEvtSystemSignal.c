@@ -89,11 +89,14 @@ static int syssig_register_event(LinkedList * events, MyEvent * info)
 /****                SYSSIG Private Method                *****/
 /**************************************************************/
 
-static EDRtn M_Subscribe(EDEvt * self, void * pInfo)
+static EDRtn M_Subscribe(EDEvt * self, EDEvtInfo * pInfo)
 {
-	EDEvtSysSigInfo * info = pInfo;
+	EDEvtSysSigInfo * info = (EDEvtSysSigInfo *) pInfo;
 	MyEDEvt * this  = (MyEDEvt *) self;
 	MyEvent * event = NULL;
+
+	if (pInfo->magic != EDEvtSysSigInfoMagic)
+		return EDRTN_ERROR;
 
 	if (info->sig < 1 || info->sig > SIGRTMAX)
 		return EDRTN_ERROR;

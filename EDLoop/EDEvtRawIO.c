@@ -27,10 +27,13 @@ struct MyEDEvt {
 /****                EDEvtRaw Public Method               *****/
 /**************************************************************/
 
-static EDRtn M_Subscribe(EDEvt * self, void * pInfo)
+static EDRtn M_Subscribe(EDEvt * self, EDEvtInfo * pInfo)
 {
-	EDEvtRawInfo * info = pInfo;
+	EDEvtRawInfo * info = (EDEvtRawInfo *) pInfo;
 	MyEDEvt * this  = (MyEDEvt *) self;
+
+	if (pInfo->magic != EDEvtRawInfoMagic)
+		return EDRTN_ERROR;
 
 	if (info->fd < 0)
 		return EDRTN_ERROR;

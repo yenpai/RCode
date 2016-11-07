@@ -3,13 +3,16 @@
 
 #include "EDLoop.h"
 
-typedef struct EDEvtRawInfo EDEvtRawInfo;
+#define EDEvtRawInfoMagic	0xFFCC0001
+
+typedef struct EDEvtRawInfo EDEvtRawInfo; /* Extend EDEvtInfo */
 
 struct EDEvtRawInfo {
-	int     fd;
-	short   flags; /* IO Flag: Read/Write */
-	void  * pData;
-	void (* cb) (EDEvt *, EDEvtRawInfo * info, short revents);
+	EDEvtInfo self;
+	int       fd;
+	short     flags; /* IO Flag: Read/Write */
+	void    * pData;
+	void   (* cb) (EDEvt *, EDEvtRawInfo * info, short revents);
 };
 
 EDEvt * EDEvtRawCreate();

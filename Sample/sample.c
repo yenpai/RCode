@@ -39,6 +39,7 @@ static void OnSysSignal(EDEvt * UNUSED(evt), EDEvtSysSigInfo * info)
 
 		case SIGUSR2:
 			LOG_D("EVT", "Recive System Signal [SIGUSR2][%d].", info->sig);
+			loop->Update(loop);
 			break;
 
 		case SIGTERM:
@@ -76,9 +77,12 @@ static int Dispatch()
 	return 0;
 }
 
-#define SysSigSub(s)    evt->Subscribe(evt, &(EDEvtSysSigInfo){s, OnSysSignal, loop})
-#define DBusSubM(m, c)  evt->Subscribe(evt, &(EDEvtDBusInfo){EDEVT_DBUS_METHOD, SAMPLE_DBUS_IFNAME, m, c, loop})
-#define DBusSubS(s, c)  evt->Subscribe(evt, &(EDEvtDBusInfo){EDEVT_DBUS_SIGNAL, SAMPLE_DBUS_IFNAME, s, c, loop})
+#define SysSigSub(s)    evt->Subscribe(evt, (EDEvtInfo *) &(EDEvtSysSigInfo) \
+		{{EDEvtSysSigInfoMagic}, s, loop, OnSysSignal})
+#define DBusSubM(m, c)  evt->Subscribe(evt, (EDEvtInfo *) &(EDEvtDBusInfo) \
+		{{EDEvtDBusInfoMagic}, EDEVT_DBUS_METHOD, SAMPLE_DBUS_IFNAME, m, loop, c})
+#define DBusSubS(s, c)  evt->Subscribe(evt, (EDEvtInfo *) &(EDEvtDBusInfo) \
+		{{EDEvtDBusInfoMagic}, EDEVT_DBUS_SIGNAL, SAMPLE_DBUS_IFNAME, s, loop, c})
 
 static int InitEvtSysSig()
 {
@@ -135,16 +139,12 @@ static int InitEvtDBus()
 
 	evt = gWS->evtDBus;
 
-	LOG_V("INIT", "Subscribe 1");
-
 	if ((ret = DBusSubM(SAMPLE_DBUS_MET_DEBUG, OnDBusMethod_Debug)) < 0)
 	{
 		LOG_E("INIT", "Subscribe DBus Method [%s] Failed! ret[%d]", 
 				SAMPLE_DBUS_MET_DEBUG, ret);
 		return -1;
 	}
-
-	LOG_V("INIT", "Subscribe 2"); 
 
 	if ((ret = DBusSubS(SAMPLE_DBUS_SIG_TEST1, OnDBusSignal_Test1)) < 0)
 	{

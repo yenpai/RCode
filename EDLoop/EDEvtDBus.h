@@ -4,8 +4,9 @@
 #include "EDLoop.h"
 #include "dbus/dbus.h"
 
+#define EDEvtDBusInfoMagic	0xFFCC0003
+
 typedef struct EDEvtDBusInfo EDEvtDBusInfo;
-typedef void (*EDEvtDBusCB)   (EDEvt *, EDEvtDBusInfo * info, DBusMessage * msg);
 
 typedef enum {
 	EDEVT_DBUS_SIGNAL,
@@ -13,11 +14,12 @@ typedef enum {
 } EDEVT_DBUS_TYPE;
 
 struct EDEvtDBusInfo {
+	EDEvtInfo       self;
 	EDEVT_DBUS_TYPE type;
-	char ifname[64];
-	char mtname[64];
-	EDEvtDBusCB cb;
-	void *pData;
+	char            ifname[64];
+	char            mtname[64];
+	void          * pData;
+	void         (* cb) (EDEvt *, EDEvtDBusInfo * info, DBusMessage * msg);
 };
 
 EDEvt * EDEvtDBusCreate(DBusConnection *pConn);

@@ -187,13 +187,14 @@ update_fds:
 			error_code = -1;
 			goto error_return;
 		}
+	}
 
-		/* Check poll fds number */
-		if (this->pfds_cur == 0)
-		{
-			error_code = -2;
-			goto error_return;
-		}
+	/* Check poll fds number */
+	if (this->pfds_cur == 0)
+	{
+		LOG_E(TAG, "edloop not binding any pfd!");
+		error_code = -2;
+		goto error_return;
 	}
 
 	/* Poll loop */
@@ -237,14 +238,14 @@ error_return:
 /****                EDLOOP Public Method                 *****/
 /**************************************************************/
 
-
 static int M_AddEvt(EDLoop * self, EDEvt * evt)
 {
 	MyEDLoop * this = (MyEDLoop *) self;
 
-	this->events->InsertLast(this->events, evt);
-	SET_NEED_UPDATE(this, 1);
+	if (this->events->InsertLast(this->events, evt) < 0)
+		return -1;
 
+	SET_NEED_UPDATE(this, 1);
 	return 0;
 }
 
@@ -262,6 +263,12 @@ static int M_Loop(EDLoop * self)
 
 	SET_NEED_STOP(this, 0);
 	return error_code;
+}
+
+static void M_Update(EDLoop * self)
+{
+	MyEDLoop * this = (MyEDLoop *) self;
+	SET_NEED_UPDATE(this, 1);
 }
 
 static void M_Stop(EDLoop * self)
@@ -298,6 +305,7 @@ EDLoop * EDLoopCreate()
 	EDLoop     self = (EDLoop) {
 		.AddEvt  = M_AddEvt,
 		.Loop    = M_Loop,
+		.Update  = M_Update,
 		.Stop    = M_Stop,
 		.Destroy = M_Destroy,
 	};

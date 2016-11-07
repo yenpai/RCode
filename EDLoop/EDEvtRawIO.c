@@ -14,7 +14,7 @@ struct MyEDEvt {
 
 #ifdef EDLOOP_SUPPORT_LOGGER
 #include "CLogger.h"
-#define TAG "EvtSysSig"
+#define TAG "EvtRaw"
 #else
 #define LOG_V(...) do {} while(0)
 #define LOG_I(...) do {} while(0)

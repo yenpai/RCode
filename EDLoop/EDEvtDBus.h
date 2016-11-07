@@ -7,6 +7,7 @@
 #define EDEvtDBusInfoMagic	0xFFCC0003
 
 typedef struct EDEvtDBusInfo EDEvtDBusInfo;
+typedef void (*EDEvtDBusCB) (EDEvt *, EDEvtDBusInfo * info, DBusMessage * msg);
 
 typedef enum {
 	EDEVT_DBUS_SIGNAL,
@@ -19,8 +20,12 @@ struct EDEvtDBusInfo {
 	char            ifname[64];
 	char            mtname[64];
 	void          * pData;
-	void         (* cb) (EDEvt *, EDEvtDBusInfo * info, DBusMessage * msg);
+	EDEvtDBusCB     cb;
 };
+
+#define EDEvtDBusInfoSet(T,I,M,D,C) \
+	(EDEvtInfo *) &(EDEvtDBusInfo) { \
+		{EDEvtDBusInfoMagic}, T, I, M, D, C}
 
 EDEvt * EDEvtDBusCreate(DBusConnection *pConn);
 

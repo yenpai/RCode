@@ -77,12 +77,9 @@ static int Dispatch()
 	return 0;
 }
 
-#define SysSigSub(s)    evt->Subscribe(evt, (EDEvtInfo *) &(EDEvtSysSigInfo) \
-		{{EDEvtSysSigInfoMagic}, s, loop, OnSysSignal})
-#define DBusSubM(m, c)  evt->Subscribe(evt, (EDEvtInfo *) &(EDEvtDBusInfo) \
-		{{EDEvtDBusInfoMagic}, EDEVT_DBUS_METHOD, SAMPLE_DBUS_IFNAME, m, loop, c})
-#define DBusSubS(s, c)  evt->Subscribe(evt, (EDEvtInfo *) &(EDEvtDBusInfo) \
-		{{EDEvtDBusInfoMagic}, EDEVT_DBUS_SIGNAL, SAMPLE_DBUS_IFNAME, s, loop, c})
+#define SysSigSub(sig)  evt->Subscribe(evt, EDEvtSysSigInfoSet(sig, loop, OnSysSignal))
+#define DBusSubM(m, c)  evt->Subscribe(evt, EDEvtDBusInfoSet(EDEVT_DBUS_METHOD, SAMPLE_DBUS_IFNAME, m, loop, c))
+#define DBusSubS(s, c)  evt->Subscribe(evt, EDEvtDBusInfoSet(EDEVT_DBUS_SIGNAL, SAMPLE_DBUS_IFNAME, s, loop, c))
 
 static int InitEvtSysSig()
 {

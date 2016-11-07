@@ -4,16 +4,22 @@
 #include <signal.h>
 #include "EDLoop.h"
 
-#define EDEvtSysSigInfoMagic   0xFFCC0002
+#define EDEvtSysSigInfoMagic  0x0ABC0002ul
 
 typedef struct EDEvtSysSigInfo EDEvtSysSigInfo;
+typedef void (*EDEvtSysSigCB) (EDEvt *, EDEvtSysSigInfo *);
 
 struct EDEvtSysSigInfo {
-	EDEvtInfo self;
-	int       sig;
-	void    * pData;
-	void   (* cb) (EDEvt *, EDEvtSysSigInfo *);
+	EDEvtInfo     self;
+	int           sig;
+	void        * pData;
+	EDEvtSysSigCB cb;
 };
+
+#define EDEvtSysSigInfoSet(S,P,C) \
+	(EDEvtInfo *) &(EDEvtSysSigInfo) { \
+		.self = {EDEvtSysSigInfoMagic}, \
+		.sig  = S, .pData = P, .cb = C}
 
 EDEvt * EDEvtSysSigCreate();
 

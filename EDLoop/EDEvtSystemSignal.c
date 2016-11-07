@@ -6,18 +6,14 @@
 #include "EDLoop.h"
 #include "EDEvtSystemSignal.h"
 
-typedef struct MyEDEvt MyEDEvt;
-typedef struct MyEvent MyEvent;
+typedef struct MyEDEvt  MyEDEvt;
+typedef EDEvtSysSigInfo MyEvent;
 
 struct MyEDEvt {
 	EDEvt        self;
 	int          fd;
 	sigset_t     mask;
 	LinkedList * events; /* MyEvent */
-};
-
-struct MyEvent {
-	EDEvtSysSigInfo info; /* EDEvtRegInfo */
 };
 
 #ifdef EDLOOP_SUPPORT_LOGGER
@@ -42,7 +38,7 @@ static MyEvent * syssig_find_event(LinkedList * events, int sig)
 	enumerator = events->CreateEnumerator(events);
 	while ((event = enumerator->Enumerate(enumerator)))
 	{
-		if (event->info.sig == sig)
+		if (event->sig == sig)
 			break;
 	}
 	enumerator->Destroy(enumerator);
@@ -58,7 +54,7 @@ static int syssig_remove_event(LinkedList * events, int sig)
 	enumerator = events->CreateEnumerator(events);
 	while ((event = enumerator->Enumerate(enumerator)))
 	{
-		if (event->info.sig == sig)
+		if (event->sig == sig)
 		{
 			events->RemoveAt(events, enumerator);
 			enumerator->Destroy(enumerator);
@@ -71,17 +67,14 @@ static int syssig_remove_event(LinkedList * events, int sig)
 	return -1;
 }
 
-static int syssig_register_event(LinkedList * events, int sig, EDEvtSysSigCB cb)
+static int syssig_register_event(LinkedList * events, MyEvent * info)
 {
 	MyEvent * event = NULL;
 
 	/* Create new event for this setting */
 	if ((event = malloc(sizeof(MyEvent))) == NULL)
 		return -1;
-
-	memset(event, 0, sizeof(MyEvent));
-	event->info.sig = sig;
-	event->info.cb  = cb;
+	memcpy(event, info, sizeof(MyEvent));
 
 	if (events->InsertLast(events, event) < 0)
 	{
@@ -110,7 +103,7 @@ static EDRtn M_Subscribe(EDEvt * self, void * pInfo)
 		if (info->cb == NULL)
 			return EDRTN_ERROR;
 
-		if (syssig_register_event(this->events, info->sig, info->cb) < 0)
+		if (syssig_register_event(this->events, info) < 0)
 			return EDRTN_ERROR;
 
 		sigaddset(&this->mask, info->sig);
@@ -126,7 +119,8 @@ static EDRtn M_Subscribe(EDEvt * self, void * pInfo)
 		return EDRTN_SUCCESS;
 	}
 
-	event->info.cb = info->cb;
+	event->cb    = info->cb;
+	event->pData = info->pData;
 	return EDRTN_SUCCESS;
 }
 
@@ -188,8 +182,8 @@ static EDRtn M_Handle(EDEvt * self, struct pollfd * pfd)
 
 	if ((event = syssig_find_event(this->events, si.ssi_signo)))
 	{
-		if (event->info.cb)
-			event->info.cb(&this->self, event->info.sig);
+		if (event->cb)
+			event->cb(&this->self, event);
 	}
 
 	return EDRTN_SUCCESS;

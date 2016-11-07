@@ -199,7 +199,7 @@ static DBusHandlerResult eddbus_filter_handle(DBusConnection * conn, DBusMessage
 						message, event->ifname, event->mtname))
 			{
 
-				event->cb(&this->self, message);
+				event->cb(&this->self, event, message);
 				enumerator->Destroy(enumerator);
 				return DBUS_HANDLER_RESULT_HANDLED;
 			}
@@ -212,7 +212,7 @@ static DBusHandlerResult eddbus_filter_handle(DBusConnection * conn, DBusMessage
 			if (dbus_message_is_signal(
 						message, event->ifname, event->mtname))
 			{
-				event->cb(&this->self, message);
+				event->cb(&this->self, event,  message);
 				enumerator->Destroy(enumerator);
 				return DBUS_HANDLER_RESULT_HANDLED;
 			}

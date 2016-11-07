@@ -5,11 +5,12 @@
 #include "EDLoop.h"
 
 typedef struct EDEvtSysSigInfo EDEvtSysSigInfo;
-typedef void (*EDEvtSysSigCB) (EDEvt *, int sig);
+typedef void (*EDEvtSysSigCB) (EDEvt *, EDEvtSysSigInfo *);
 
 struct EDEvtSysSigInfo {
-	int            sig;
-	EDEvtSysSigCB  cb;
+	int           sig;
+	EDEvtSysSigCB cb;
+	void *        pData;
 };
 
 EDEvt * EDEvtSysSigCreate();

@@ -27,36 +27,38 @@ CLogger     gLogger;
 
 /*******************************************************************************/
 
-static void OnSysSignal(EDEvt * UNUSED(evt), int sig)
+static void OnSysSignal(EDEvt * UNUSED(evt), EDEvtSysSigInfo * info)
 {
-	switch (sig)
+	EDLoop * loop = info->pData;
+
+	switch (info->sig)
 	{
 		case SIGUSR1:
-			LOG_D("EVT", "Recive System Signal [SIGUSR1][%d].", sig);
+			LOG_D("EVT", "Recive System Signal [SIGUSR1][%d].", info->sig);
 			break;
 
 		case SIGUSR2:
-			LOG_D("EVT", "Recive System Signal [SIGUSR2][%d].", sig);
+			LOG_D("EVT", "Recive System Signal [SIGUSR2][%d].", info->sig);
 			break;
 
 		case SIGTERM:
-			LOG_D("EVT", "Recive System Signal [SIGTERM][%d].", sig);
-			gWS->loop->Stop(gWS->loop);
+			LOG_D("EVT", "Recive System Signal [SIGTERM][%d].", info->sig);
+			loop->Stop(loop);
 			break;
 	}
 }
 
-static void OnDBusMethod_Debug(EDEvt * UNUSED(evt), DBusMessage * UNUSED(msg))
+static void OnDBusMethod_Debug(EDEvt * UNUSED(evt), EDEvtDBusInfo * UNUSED(info),  DBusMessage * UNUSED(msg))
 {
 	LOG_D("EVT", "Recive DBus Method Call [Debug].");
 }
 
-static void OnDBusSignal_Test1(EDEvt * UNUSED(evt), DBusMessage * UNUSED(msg))
+static void OnDBusSignal_Test1(EDEvt * UNUSED(evt), EDEvtDBusInfo * UNUSED(info), DBusMessage * UNUSED(msg))
 {
 	LOG_D("EVT", "Recive DBus Signal [Test1].");
 }
 
-static void OnDBusSignal_Test2(EDEvt * UNUSED(evt), DBusMessage * UNUSED(msg))
+static void OnDBusSignal_Test2(EDEvt * UNUSED(evt), EDEvtDBusInfo * UNUSED(info), DBusMessage * UNUSED(msg))
 {
 	LOG_D("EVT", "Recive DBus Signal [Test2].");
 }
@@ -74,33 +76,35 @@ static int Dispatch()
 	return 0;
 }
 
+#define SysSigSub(s)    evt->Subscribe(evt, &(EDEvtSysSigInfo){s, OnSysSignal, loop})
+#define DBusSubM(m, c)  evt->Subscribe(evt, &(EDEvtDBusInfo){EDEVT_DBUS_METHOD, SAMPLE_DBUS_IFNAME, m, c, loop})
+#define DBusSubS(s, c)  evt->Subscribe(evt, &(EDEvtDBusInfo){EDEVT_DBUS_SIGNAL, SAMPLE_DBUS_IFNAME, s, c, loop})
+
 static int InitEvtSysSig()
 {
 	int ret;
 	EDLoop * loop = gWS->loop;
 	EDEvt  * evt  = NULL;
 
-	if ((gWS->evtSysSig = EDEvtSysSigCreate()) == NULL)
+	if ((evt = EDEvtSysSigCreate()) == NULL)
 	{
 		LOG_E("INIT", "EDEvtSysSigCreate Failed!");
 		return -1;
 	}
-	
-	evt = gWS->evtSysSig;
 
-	if ((ret = evt->Subscribe(evt, &(EDEvtSysSigInfo){SIGUSR1, OnSysSignal})) < 0)
+	if ((ret = SysSigSub(SIGUSR1)) < 0)
 	{
 		LOG_E("INIT", "RegSysSignal SIGUSR1 Failed! ret[%d]", ret);
 		return -1;
 	}
 
-	if ((ret = evt->Subscribe(evt, &(EDEvtSysSigInfo){SIGUSR2, OnSysSignal})) < 0)
+	if ((ret = SysSigSub(SIGUSR2)) < 0)
 	{
 		LOG_E("INIT", "RegSysSignal SIGUSR2 Failed! ret[%d]", ret);
 		return -1;
 	}
 
-	if ((ret = evt->Subscribe(evt, &(EDEvtSysSigInfo){SIGTERM, OnSysSignal})) < 0)
+	if ((ret = SysSigSub(SIGTERM)) < 0)
 	{
 		LOG_E("INIT", "RegSysSignal SIGTERM Failed! ret[%d]", ret);
 		return -1;
@@ -112,6 +116,7 @@ static int InitEvtSysSig()
 		return -1;
 	}
 
+	gWS->evtSysSig = evt;
 	LOG_V("INIT", "Init System Signal Event Finish");
 	return 0;
 }
@@ -129,9 +134,6 @@ static int InitEvtDBus()
 	}
 
 	evt = gWS->evtDBus;
-
-#define DBusSubM(m, c) evt->Subscribe(evt, &(EDEvtDBusInfo){EDEVT_DBUS_METHOD,SAMPLE_DBUS_IFNAME,m,c})
-#define DBusSubS(s, c) evt->Subscribe(evt, &(EDEvtDBusInfo){EDEVT_DBUS_SIGNAL,SAMPLE_DBUS_IFNAME,s,c})
 
 	LOG_V("INIT", "Subscribe 1");
 

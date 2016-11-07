@@ -5,7 +5,7 @@
 #include "dbus/dbus.h"
 
 typedef struct EDEvtDBusInfo EDEvtDBusInfo;
-typedef void (*EDEvtDBusCB)   (EDEvt *, DBusMessage * msg);
+typedef void (*EDEvtDBusCB)   (EDEvt *, EDEvtDBusInfo * info, DBusMessage * msg);
 
 typedef enum {
 	EDEVT_DBUS_SIGNAL,
@@ -17,6 +17,7 @@ struct EDEvtDBusInfo {
 	char ifname[64];
 	char mtname[64];
 	EDEvtDBusCB cb;
+	void *pData;
 };
 
 EDEvt * EDEvtDBusCreate(DBusConnection *pConn);

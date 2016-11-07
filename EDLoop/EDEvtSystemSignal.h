@@ -4,7 +4,7 @@
 #include <signal.h>
 #include "EDLoop.h"
 
-#define EDEvtSysSigInfoMagic  0x0ABC0002ul
+#define EDEvtSysSigInfoMagic  0xFFCC0002
 
 typedef struct EDEvtSysSigInfo EDEvtSysSigInfo;
 typedef void (*EDEvtSysSigCB) (EDEvt *, EDEvtSysSigInfo *);

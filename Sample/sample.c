@@ -66,17 +66,6 @@ static void OnDBusSignal_Test2(EDEvt * UNUSED(evt), EDEvtDBusInfo * UNUSED(info)
 
 /*******************************************************************************/
 
-static int Dispatch()
-{
-	int ret;
-
-	LOG_I("EDD", "=== Start Event-Driven Dispatch ===");
-	ret = gWS->loop->Loop(gWS->loop);
-	LOG_I("EDD", "=== Leave Event-Driven Dispatch, ret[%d] ===", ret);
-
-	return 0;
-}
-
 #define SysSigSub(sig)  evt->Subscribe(evt, EDEvtSysSigInfoSet(sig, loop, OnSysSignal))
 #define DBusSubM(m, c)  evt->Subscribe(evt, EDEvtDBusInfoSet(EDEVT_DBUS_METHOD, SAMPLE_DBUS_IFNAME, m, loop, c))
 #define DBusSubS(s, c)  evt->Subscribe(evt, EDEvtDBusInfoSet(EDEVT_DBUS_SIGNAL, SAMPLE_DBUS_IFNAME, s, loop, c))
@@ -128,13 +117,11 @@ static int InitEvtDBus()
 	EDLoop * loop = gWS->loop;
 	EDEvt  * evt  = NULL;
 
-	if ((gWS->evtDBus = EDEvtDBusCreate(gWS->dbus_conn)) == NULL)
+	if ((evt = EDEvtDBusCreate(gWS->dbus_conn)) == NULL)
 	{
 		LOG_E("INIT", "EDEvtDBusCreate Failed!");
 		return -1;
 	}
-
-	evt = gWS->evtDBus;
 
 	if ((ret = DBusSubM(SAMPLE_DBUS_MET_DEBUG, OnDBusMethod_Debug)) < 0)
 	{
@@ -163,6 +150,7 @@ static int InitEvtDBus()
 		return -1;
 	}
 
+	gWS->evtDBus = evt;
 	LOG_V("INIT", "Init DBus Event Finish");
 	return 0;
 }
@@ -236,34 +224,39 @@ static int InitWorkSpace()
 
 int main(int UNUSED(argc), char * UNUSED(argv[]))
 {
+	int ret;
 	gLogger.stream = stdout;
 	gLogger.levels = CLOGGER_ALL;
 
 	LOG_I("INIT", "=== Start Initial Process ===");
 
-	if (InitWorkSpace() < 0)
+	if ((ret = InitWorkSpace()) < 0)
 	{
-		LOG_E("INIT", "InitWorkSpace Failed!");
+		LOG_E("INIT", "InitWorkSpace Failed! ret[%d]", ret);
 		exit(EXIT_FAILURE);
 	}
 
-	if (InitEvtSysSig() < 0)
+	if ((ret = InitEvtSysSig()) < 0)
 	{
-		LOG_E("INIT", "Init System Signal Event Failed!");
+		LOG_E("INIT", "Init System Signal Event Failed! ret[%d]", ret);
 		exit(EXIT_FAILURE);
 	}
 
-	if (InitDBusConn() < 0)
+	if ((ret = InitDBusConn()) < 0)
 	{
-		LOG_E("INIT", "Init DBus Conn Failed!");
+		LOG_E("INIT", "Init DBus Conn Failed! ret[%d]", ret);
 		exit(EXIT_FAILURE);
 	}
 
-	if (InitEvtDBus() < 0)
+	if ((ret = InitEvtDBus()) < 0)
 	{
-		LOG_E("INIT", "Init DBus Event Failed!");
+		LOG_E("INIT", "Init DBus Event Failed! ret[%d]", ret);
 		exit(EXIT_FAILURE);
 	}
 
-	return Dispatch();
+	LOG_I("EDD", "=== Start Event-Driven Dispatch ===");
+	ret = gWS->loop->Loop(gWS->loop);
+	LOG_I("EDD", "=== Leave Event-Driven Dispatch, ret[%d] ===", ret);
+
+	return ret;
 }

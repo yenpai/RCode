@@ -2,8 +2,26 @@
 #include "CLogger.h"
 
 /****************************************
- * Private Interface Definition
+ * Public Method Definition
  ****************************************/
+char * clogger_level_to_string(int level)
+{
+	switch (level)
+	{
+		case LOG_NOTICE:
+			return "NOTICE";
+		case LOG_INFO:
+			return "INFO";
+		case LOG_DEBUG:
+			return "DEBUG";
+		case LOG_WARNING:
+			return "WARN";
+		case LOG_ERR:
+			return "ERROR";
+	}
+
+	return "";
+}
 
 /****************************************
  * Private Function Definition
@@ -13,11 +31,13 @@ static void clogger_default_output(CLoggerInfo info, const char *fmt, ...)
 {
 	va_list args;
 
-	if (gLogger.stream && (info.level & gLogger.levels))
+	if (gLogger.stream)
 	{
 
-		fprintf(gLogger.stream, "[%s][%s][%s:%u] ", 
-				info.tag, info.file, info.func, info.line);
+		fprintf(gLogger.stream, "[%s][%s][%s:%u][%s] ", 
+				info.tag, info.file, 
+				info.func, info.line,
+				clogger_level_to_string(info.level));
 
 		va_start(args, fmt);
 		vfprintf(gLogger.stream, fmt, args);
@@ -28,9 +48,6 @@ static void clogger_default_output(CLoggerInfo info, const char *fmt, ...)
 	}
 }
 
-/****************************************
- * Public Method Definition
- ****************************************/
  
 /****************************************
  * Constructor Definition
@@ -38,7 +55,6 @@ static void clogger_default_output(CLoggerInfo info, const char *fmt, ...)
 
 CLogger gLogger = { 
 	.stream = NULL,
-	.levels = CLOGGER_ALL,
 	.output = clogger_default_output,
 };
 

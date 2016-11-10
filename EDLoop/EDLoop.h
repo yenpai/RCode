@@ -1,7 +1,7 @@
 #ifndef _EDLOOP_H_
 #define _EDLOOP_H_
 
-#define EDLOOP_SUPPORT_LOGGER
+//#define EDLOOP_SUPPORT_LOGGER
 
 #include <stdint.h>
 #include <poll.h>

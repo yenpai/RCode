@@ -85,7 +85,7 @@ static int edloop_update_fds(MyEDLoop * this)
 	uint32_t idx;
 	EDRtn    rtn;
 
-	LOG_V(TAG, "edloop update all fds by events.");
+	LOG_D(TAG, "edloop update all fds by events.");
 
 	/* ReInitial and Setup poll fds */
 	this->pfds_cur = 0;
@@ -137,7 +137,7 @@ static int edloop_handle_fds(MyEDLoop * this)
 	EDRtn        rtn;
 	nfds_t num;
 
-	LOG_V(TAG, "edloop handle all fds by events.");
+	LOG_D(TAG, "edloop handle all fds by events.");
 
 	for (num = 0 ; num < this->pfds_cur ; num++)
 	{

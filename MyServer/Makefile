@@ -1,5 +1,5 @@
 PDIR := $(realpath ./)
-TDIR := $(realpath ./)
+TDIR := $(realpath ../)
 
 #############################################################
 # Expected Variables 
@@ -8,20 +8,24 @@ TDIR := $(realpath ./)
 #   GEN_LIBS - list of libs to be generated
 #   GEN_BINS - list of binaries to be generated
 #   COMPONENTS_xxx - a list of libs/objs to be extracted and 
-#                    rolled up into a generated libs/bins
+#                    rolled up into a generated libxxx.a
 #############################################################
 
-SUBDIRS = CLogger Container EDLoop Sample MyServer 
+GEN_BINS = MyServer
+COMPONENTS_MyServer = \
+	$(TDIR)/EDLoop/libEDLoop.a \
+	$(TDIR)/Container/libContainer.a \
+	$(TDIR)/CLogger/libCLogger.a
 
 #############################################################
 # Compile Variables
 #############################################################
 
-#DEFINES  := 
-#INCLUDES :=
+INCLUDES := -I$(TDIR)/EDLoop -I$(TDIR)/CLogger
+INCLUDES += $(DBUS_INCLUDES)
 
 #############################################################
 # Recursion Magic
 #############################################################
 
-include rule.mk
+include $(TDIR)/rule.mk

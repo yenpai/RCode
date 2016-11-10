@@ -226,7 +226,6 @@ int main(int UNUSED(argc), char * UNUSED(argv[]))
 {
 	int ret;
 	gLogger.stream = stdout;
-	gLogger.levels = CLOGGER_ALL;
 
 	LOG_I("INIT", "=== Start Initial Process ===");
 
